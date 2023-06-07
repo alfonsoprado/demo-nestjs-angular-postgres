@@ -1,0 +1,130 @@
+version: '3.9'
+services:
+  dashboard:
+    container_name: demo-dashboard
+    image: b4bz/homer:v23.05.1
+    restart: unless-stopped
+    ports:
+    - 80:8080
+    volumes:
+    - /etc/timezone:/etc/timezone:ro
+    - /etc/localtime:/etc/localtime:ro
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    - ./config/homer:/www/assets
+  postgres: 
+    container_name: demo-postgres
+    image: postgres:15.3
+    ports:
+    - 5432:5432
+    restart: unless-stopped
+    volumes:
+    - /etc/timezone:/etc/timezone:ro
+    - /etc/localtime:/etc/localtime:ro
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    - postgres:/var/lib/postgresql/data
+    - ./config/postgres/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    environment:
+      POSTGRES_PASSWORD: develop
+      POSTGRES_USER: develop
+      POSTGRES_DB: develop
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U develop"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  migrations:
+    build:
+      context: ./migrations
+    container_name: demo-migrations
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: develop
+      DB_PASSWORD: develop
+      DB_DATABASE: develop
+    volumes:
+    - /etc/timezone:/etc/timezone:ro
+    - /etc/localtime:/etc/localtime:ro
+    - /usr/src/app/node_modules
+    - ./migrations:/usr/src/app 
+  pgadmin:
+    container_name: demo-pgadmin
+    image: dcagatay/pwless-pgadmin4:latest
+    environment:
+      POSTGRES_USER: develop
+      POSTGRES_PASSWORD: develop
+    ports:
+    - "10002:80"
+    restart: unless-stopped
+    volumes:
+    - /etc/timezone:/etc/timezone:ro
+    - /etc/localtime:/etc/localtime:ro
+    - pgadmin:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+  fakesmtp:
+    container_name: demo-fakesmtp
+    image: gessnerfl/fake-smtp-server:2.0.0
+    ports:
+    - "10003:8080"
+    restart: unless-stopped
+    volumes:
+    - /etc/timezone:/etc/timezone:ro
+    - /etc/localtime:/etc/localtime:ro
+  dozzle:
+    container_name: demo-dozzle
+    image: amir20/dozzle:latest
+    volumes:
+    - /etc/timezone:/etc/timezone:ro
+    - /etc/localtime:/etc/localtime:ro
+    - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+    - 10004:8080
+  backend:
+    build:
+      context: ./backend
+    container_name: demo-backend
+    restart: unless-stopped
+    ports:
+    - "10001:10001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+    - /etc/timezone:/etc/timezone:ro
+    - /etc/localtime:/etc/localtime:ro
+    - /usr/src/app/node_modules
+    - ./backend:/usr/src/app
+    - ./migrations/src/entities:/usr/src/app/src/entities
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://backend:10001/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    environment:
+      # API
+      NODE_ENV: develop
+      PORT: 10001
+      CORS_ORIGINS: "http://localhost:10000"
+      JWT_SECRET: 2hsk4A_!-Uwm?k+5n1n4r-,
+      SESSION_TOKEN_EXPIRATION_TIME: '1d' # Suffixes in: https://github.com/vercel/ms#readme
+      # Database
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: develop
+      DB_PASSWORD: develop
+      DB_DATABASE: develop
+      DB_LOGGING: false
+      # E-Mail
+      EMAIL_URL: "http://localhost:10000"
+      EMAIL_HOST: fakesmtp
+      EMAIL_PORT: 8025
+      EMAIL_SECURE: false
+      EMAIL_USER: ''
+      EMAIL_PASS: ''
+      EMAIL_FROM_ADDRESS: contact@alfonsoprado.com
+      EMAIL_TOKEN_EXPIRATION_TIME: '30m' # Suffixes in: https://github.com/vercel/ms#readme
+volumes:
+  postgres:
+  pgadmin:
